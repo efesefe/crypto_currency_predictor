@@ -1,0 +1,4 @@
+env
+.env
+kafka/logs
+X509-efe.pem
