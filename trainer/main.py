@@ -1,9 +1,13 @@
-import os
 from dotenv import load_dotenv
 from pymongo import MongoClient
 import numpy as np
+import matplotlib.pyplot as plt
 from pyspark.sql import SparkSession
-import pyspark
+
+from tensorflow.keras.models import Sequential
+from tensorflow.keras.layers import Dense
+from tensorflow.keras.layers import LSTM
+
 spark = SparkSession.builder.master('local').getOrCreate()
 
 load_dotenv(dotenv_path=".env")
@@ -16,15 +20,7 @@ client = MongoClient(uri,
 
 db = client['CryptoData']
 
-headers = {
-  'Content-Type': 'application/json',
-  'Access-Control-Request-Headers': '*',
-  'api-key': os.getenv('API_KEY'), 
-}
-
-trees = {}
-
-TIME_STEPS = 5
+TIME_STEPS = 2
 
 def create_sequences(X, y, time_steps = TIME_STEPS):
     Xs, ys = [], []
@@ -38,19 +34,41 @@ def create_sequences(X, y, time_steps = TIME_STEPS):
 def main():
   COIN_SYMBOLS = db.list_collection_names()
   for symbol in COIN_SYMBOLS:
-    data = db[symbol].find(filter={},projection={"USD":1})
+    data = db[symbol].find(filter={},projection={"USD":1}, limit=2000)
     data = list(data)
     data = [dat['USD'] for dat in data]
+    data = np.array(data)
     print(data)
-    X_train, y_train = create_sequences(data, data)
-    print("---X------X------X------X------X---")
-    print(X_train)
+    training_size = int(len(data) * 0.60)
+    test_size=len(data)-training_size
+    train_data , test_data = data[0 : training_size] , data[test_size : len(data)]
+    X_train, y_train = create_sequences(train_data, train_data)
+    X_test, y_test = create_sequences(test_data, test_data)
     sdf = spark.createDataFrame(X_train)
-    sdf.printSchema() #data type of each column
-    sdf.show(5) #It gives you head of pandas DataFrame
+    sdf.printSchema()
+    sdf.show(5)
     count_df = sdf.count()
+    model = Sequential()
+    model.add(LSTM(10, input_shape=(None,1),activation="relu"))
+    model.add(Dense(1))
+    model.compile(loss="mean_squared_error",optimizer="adam")
+    history = model.fit(X_train, y_train, validation_data = (X_test, y_test),
+                        epochs=200, batch_size=32, verbose=1)
+    model.save(f"models/{symbol}_model.h5")
+    
+
+    loss = history.history['loss']
+    val_loss = history.history['val_loss']
+
+    epochs = range(len(loss))
+
+    plt.plot(epochs, loss, 'r', label='Training loss')
+    plt.plot(epochs, val_loss, 'b', label='Validation loss')
+    plt.title('Training and validation loss')
+    plt.legend(loc=0)
+
+    plt.show()
+
     print(count_df)
-    print("---Y------Y------Y------Y------Y---")
-    print(y_train.shape)
 
 main()

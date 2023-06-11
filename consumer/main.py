@@ -1,21 +1,18 @@
 from kafka import KafkaConsumer
 from json import loads
+from pymongo import MongoClient
 
-import requests
-import json
-import os
 from dotenv import load_dotenv
 
 load_dotenv(dotenv_path=".env")
 
-url = "https://eu-central-1.aws.data.mongodb-api.com/app/data-quqkg/endpoint/data/v1/action/insertOne"
+uri = "mongodb+srv://cryptocluster.6p8ex3z.mongodb.net/?authSource=%24external&authMechanism=MONGODB-X509&retryWrites=true&w=majority"
 
+client = MongoClient(uri,
+                     tls=True,
+                     tlsCertificateKeyFile='./X509-efe.pem')
 
-headers = {
-  'Content-Type': 'application/json',
-  'Access-Control-Request-Headers': '*',
-  'api-key': os.getenv('API_KEY'), 
-}
+db = client['CryptoData']
 
 consumer = KafkaConsumer(
     'coin_test',
@@ -34,13 +31,7 @@ def main():
                 data = message[symbol]
                 data.update({'time':time})
                 data.update({'learn':True})
-                payload = json.dumps({
-                    "collection": symbol,
-                    "database": "CryptoData",
-                    "dataSource": "CryptoCluster",
-                    "document": data
-                })
-                requests.request("POST", url, headers=headers, data=payload)
+                db[symbol].insert_one(data)
         print(f'{time} added')
 
 main()
